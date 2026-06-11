@@ -187,8 +187,6 @@ def clean_html(html: str, page_title: str) -> str:
     # Zusätzliche Bereinigung: Entfernt bei manchen Datasheets ein überflüssiges
     # leeres oder fast-leeres div am unteren Ende der dsOuterFrame, das einen
     # zusätzlichen Strich der Umrandung unterhalb des eigentlichen Rahmens erzeugt.
-    # Dies tritt bei bestimmten Einheiten (z.B. T'au, Necrons, manche Orks) auf,
-    # deren HTML-Struktur ein extra Rahmenelement am Ende enthält.
     outer = None
     if main and getattr(main, "name", None) == "div":
         classes = main.get("class", []) or []
@@ -342,10 +340,77 @@ def create_print_version(url: str, output_dir: str = "output"):
     print(f"✅ Fertige Datei: {html_path}")
 
 
+def process_url_list(file_path: str, output_dir: str = "output"):
+    """Verarbeitet eine .txt-Datei mit einer URL pro Zeile."""
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            urls = []
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    urls.append(line)
+    except FileNotFoundError:
+        print(f"❌ Fehler: Datei '{file_path}' nicht gefunden.")
+        return
+    except Exception as e:
+        print(f"❌ Fehler beim Lesen der Datei: {e}")
+        return
+
+    if not urls:
+        print("⚠️  Keine gültigen URLs in der Datei gefunden.")
+        return
+
+    total = len(urls)
+    print(f"📋 {total} Datasheet-URLs gefunden. Starte Verarbeitung...\n")
+
+    # CSS-Dateien nur einmal am Anfang kopieren (spart Zeit bei vielen Einträgen)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    script_dir = Path(__file__).parent
+    for css in CSS_FILES:
+        src = script_dir / css
+        if not src.exists():
+            src = script_dir / "attachments" / css
+        if src.exists():
+            shutil.copy(src, output_dir)
+
+    for i, url in enumerate(urls, 1):
+        print(f"[{i:3d}/{total}] 📥 {url}")
+        try:
+            create_print_version(url, output_dir)
+        except KeyboardInterrupt:
+            print("\n⏹️  Abgebrochen durch Benutzer.")
+            break
+        except Exception as e:
+            print(f"     ❌ Fehler: {e}\n")
+        else:
+            print()  # Leerzeile für bessere Lesbarkeit
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Wahapedia Datasheet zu druckfertigem HTML konvertieren")
-    parser.add_argument("url", help="z.B. https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Rubric-Marines")
-    parser.add_argument("-o", "--output", default="output", help="Ausgabe-Ordner (Standard: output)")
+    parser = argparse.ArgumentParser(
+        description="Wahapedia Datasheet zu druckfertigem HTML konvertieren (einzeln oder als Liste)"
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "url",
+        nargs="?",
+        help="Einzelne URL, z.B. https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Rubric-Marines"
+    )
+    group.add_argument(
+        "-f", "--file",
+        metavar="DATEI.txt",
+        help="Textdatei mit einer URL pro Zeile (Kommentare mit # möglich)"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        default="output",
+        help="Ausgabe-Ordner (Standard: output)"
+    )
     args = parser.parse_args()
 
-    create_print_version(args.url, args.output)
+    if args.file:
+        process_url_list(args.file, args.output)
+    elif args.url:
+        create_print_version(args.url, args.output)
+    else:
+        parser.print_help()
