@@ -79,34 +79,40 @@ def align_keyword_boxes(main_content: BeautifulSoup) -> None:
             container = getattr(container, "parent", None)
 
         if container and container.name == "div":
-            if is_faction:
-                style_add = (
-                    "flex: 1 1 auto !important; "
-                    "width: auto !important; "
-                    "max-width: 100% !important; "
-                    "box-sizing: border-box !important; "
-                    "padding-left: 8px !important;"
-                )
-            else:
-                style_add = (
-                    "flex: 0 0 62% !important; "
-                    "width: 62% !important; "
-                    "max-width: 62% !important; "
-                    "box-sizing: border-box !important; "
-                    "padding-right: 8px !important;"
-                )
+            # Nur auf wahrscheinliche Keyword-Boxen anwenden (Klasse oder kurzer Inhalt),
+            # um zu vermeiden, dass Styles auf übergeordnete Frame-Container angewendet werden,
+            # die bei manchen Datasheets den extra unteren Umrandungsstrich verursachen.
+            classes = " ".join(container.get("class", [])).lower()
+            txt_len = len(container.get_text(" ", strip=True))
+            if "keyword" in classes or "kw" in classes or "col" in classes or txt_len < 800:
+                if is_faction:
+                    style_add = (
+                        "flex: 1 1 auto !important; "
+                        "width: auto !important; "
+                        "max-width: 100% !important; "
+                        "box-sizing: border-box !important; "
+                        "padding-left: 8px !important;"
+                    )
+                else:
+                    style_add = (
+                        "flex: 0 0 62% !important; "
+                        "width: 62% !important; "
+                        "max-width: 62% !important; "
+                        "box-sizing: border-box !important; "
+                        "padding-right: 8px !important;"
+                    )
 
-            existing = container.get("style", "")
-            container["style"] = (existing + "; " + style_add).strip("; ")
+                existing = container.get("style", "")
+                container["style"] = (existing + "; " + style_add).strip("; ")
 
-            parent = container.parent
-            if parent and parent.name == "div":
-                p_style = parent.get("style", "")
-                if "flex" not in p_style.lower():
-                    parent["style"] = (
-                        p_style + "; display: flex !important; width: 100% !important; "
-                        "gap: 0; align-items: flex-start; box-sizing: border-box !important;"
-                    ).strip("; ")
+                parent = container.parent
+                if parent and parent.name == "div":
+                    p_style = parent.get("style", "")
+                    if "flex" not in p_style.lower():
+                        parent["style"] = (
+                            p_style + "; display: flex !important; width: 100% !important; "
+                            "gap: 0; align-items: flex-start; box-sizing: border-box !important;"
+                        ).strip("; ")
 
     # Fallback: Auch bei .ds2col und .ds2colKW direkt die Kinder anpassen
     for col_class in ["ds2col", "ds2colKW"]:
@@ -177,6 +183,32 @@ def clean_html(html: str, page_title: str) -> str:
     remove_small_icons(main)
 
     align_keyword_boxes(main)
+
+    # Zusätzliche Bereinigung: Entfernt bei manchen Datasheets ein überflüssiges
+    # leeres oder fast-leeres div am unteren Ende der dsOuterFrame, das einen
+    # zusätzlichen Strich der Umrandung unterhalb des eigentlichen Rahmens erzeugt.
+    # Dies tritt bei bestimmten Einheiten (z.B. T'au, Necrons, manche Orks) auf,
+    # deren HTML-Struktur ein extra Rahmenelement am Ende enthält.
+    outer = None
+    if main and getattr(main, "name", None) == "div":
+        classes = main.get("class", []) or []
+        if any("dsOuterFrame" in str(c) for c in classes):
+            outer = main
+    if not outer and main:
+        outer = main.find("div", class_="dsOuterFrame") if hasattr(main, "find") else None
+    if outer:
+        for child in reversed(list(outer.children)):
+            if getattr(child, "name", None) != "div":
+                continue
+            txt = child.get_text(strip=True) if hasattr(child, "get_text") else ""
+            classes_str = " ".join(child.get("class", [])) if hasattr(child, "get") else ""
+            style = (child.get("style") or "").lower() if hasattr(child, "get") else ""
+            cls_lower = classes_str.lower()
+            # Entferne trailing near-empty divs die typischerweise extra border/line rendern
+            if len(txt) < 5 or (not txt and any(k in cls_lower for k in ["border", "line", "frame", "corner", "bottom", "dsfooter"])):
+                if "border" in style or "height" in style or not txt:
+                    child.decompose()
+                    break
 
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else page_title
