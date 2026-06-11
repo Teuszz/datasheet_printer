@@ -54,6 +54,78 @@ def remove_unwanted_sections(soup: BeautifulSoup) -> None:
                 container.decompose()
 
 
+def align_keyword_boxes(main_content: BeautifulSoup) -> None:
+    """
+    Erzwingt per Inline-Style + Fallback, dass die unteren KEYWORDS- und
+    FACTION KEYWORDS-Boxen exakt dieselben Spaltenproportionen haben wie
+    der Hauptinhalt oben (62 % links / Rest rechts). Dadurch sind alle Boxen
+    bündig mit dem rechten Rand und visuell konsistent.
+    """
+    for text_node in list(main_content.find_all(string=True)):
+        text_upper = text_node.strip().upper()
+        if not (text_upper.startswith("KEYWORDS") or text_upper.startswith("FACTION KEYWORDS")):
+            continue
+
+        is_faction = text_upper.startswith("FACTION KEYWORDS")
+
+        container = text_node.parent
+        for _ in range(5):
+            if container is None:
+                break
+            if container.name == "div":
+                txt = container.get_text(" ", strip=True).upper()
+                if "KEYWORDS" in txt and len(txt) < 600:
+                    break
+            container = getattr(container, "parent", None)
+
+        if container and container.name == "div":
+            if is_faction:
+                style_add = (
+                    "flex: 1 1 auto !important; "
+                    "width: auto !important; "
+                    "max-width: 100% !important; "
+                    "box-sizing: border-box !important; "
+                    "padding-left: 8px !important;"
+                )
+            else:
+                style_add = (
+                    "flex: 0 0 62% !important; "
+                    "width: 62% !important; "
+                    "max-width: 62% !important; "
+                    "box-sizing: border-box !important; "
+                    "padding-right: 8px !important;"
+                )
+
+            existing = container.get("style", "")
+            container["style"] = (existing + "; " + style_add).strip("; ")
+
+            parent = container.parent
+            if parent and parent.name == "div":
+                p_style = parent.get("style", "")
+                if "flex" not in p_style.lower():
+                    parent["style"] = (
+                        p_style + "; display: flex !important; width: 100% !important; "
+                        "gap: 0; align-items: flex-start; box-sizing: border-box !important;"
+                    ).strip("; ")
+
+    # Fallback: Auch bei .ds2col und .ds2colKW direkt die Kinder anpassen
+    for col_class in ["ds2col", "ds2colKW"]:
+        for ds2 in main_content.find_all(class_=col_class):
+            if "KEYWORDS" in ds2.get_text().upper():
+                children = [c for c in ds2.children if getattr(c, "name", None) == "div"]
+                if len(children) == 2:
+                    children[0]["style"] = (
+                        children[0].get("style", "") +
+                        "; flex: 0 0 62% !important; width: 62% !important; "
+                        "max-width: 62% !important; box-sizing: border-box !important; padding-right: 8px !important;"
+                    ).strip()
+                    children[1]["style"] = (
+                        children[1].get("style", "") +
+                        "; flex: 1 1 auto !important; width: auto !important; "
+                        "max-width: 100% !important; box-sizing: border-box !important; padding-left: 8px !important;"
+                    ).strip()
+
+
 def remove_small_icons(main_content) -> None:
     for img in main_content.find_all("img"):
         try:
@@ -103,6 +175,8 @@ def clean_html(html: str, page_title: str) -> str:
         main = soup
 
     remove_small_icons(main)
+
+    align_keyword_boxes(main)
 
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else page_title
@@ -158,35 +232,49 @@ def clean_html(html: str, page_title: str) -> str:
             display: none !important;
         }}
 
-        /* Rechter Rand bündig */
-        .dsOuterFrame,
-        .dsBanner,
-        .dsProfileBaseWrap,
-        .dsProfileWrap,
-        .ds2col,
-        .dsLeftСol,
-        .dsRightСol,
-        .dsLeftСolKW,
-        .dsRightСolKW,
-        .two-col {{
+        /* Flex-Layout für originale Proportionen - Hauptspalten (kyrillische Klassennamen aus Original-CSS) */
+        .ds2col {{
+            display: flex !important;
             width: 100% !important;
             max-width: 100% !important;
             box-sizing: border-box !important;
         }}
 
-        .dsRightСol,
-        .dsRightСolKW,
-        .keywords-bar,
-        .dsAbility,
-        .section-header {{
-            margin-right: 0 !important;
-            padding-right: 0 !important;
-            width: 100% !important;
+        .dsLeftСol {{
+            flex: 0 0 62% !important;
+            max-width: 62% !important;
+            box-sizing: border-box !important;
         }}
 
-        .keywords-bar {{
+        .dsRightСol {{
+            flex: 1 1 auto !important;
+            margin-right: 0 !important;
+            padding-right: 0 !important;
+            box-sizing: border-box !important;
+        }}
+
+        /* Flex-Layout für Keywords-Sektion - exakt gleiche Proportionen + bündig rechts */
+        .ds2colKW {{
+            display: flex !important;
             width: 100% !important;
-            box-sizing: border-box;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+            align-items: stretch !important;
+        }}
+
+        .dsLeftСolKW {{
+            flex: 0 0 62% !important;
+            max-width: 62% !important;
+            box-sizing: border-box !important;
+            padding-right: 8px !important;
+        }}
+
+        .dsRightСolKW {{
+            flex: 1 1 auto !important;
+            margin-right: 0 !important;
+            padding-right: 0 !important;
+            box-sizing: border-box !important;
+            padding-left: 8px !important;
         }}
     </style>
 </head>
@@ -202,7 +290,6 @@ def clean_html(html: str, page_title: str) -> str:
 def create_print_version(url: str, output_dir: str = "output"):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Dateiname aus letztem Teil der URL ableiten
     unit_slug = urlparse(url).path.rstrip("/").split("/")[-1]
     html_filename = f"{unit_slug}.html"
 
