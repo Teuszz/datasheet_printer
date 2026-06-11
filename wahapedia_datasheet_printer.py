@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """
-Wahapedia Datasheet Printer v5 (final)
-- Kein extra Header
-- Icons oben rechts entfernt
-- Rechter Rand jetzt überall bündig
+Wahapedia Datasheet Printer
 """
 
 import argparse
 import shutil
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -144,7 +142,7 @@ def clean_html(html: str, page_title: str) -> str:
             padding: 25px;
         }}
 
-        /* === Icons oben rechts entfernen === */
+        /* Icons oben rechts entfernen */
         .dsOuterFrame img,
         .dsBanner img,
         .dsHeader img,
@@ -160,7 +158,7 @@ def clean_html(html: str, page_title: str) -> str:
             display: none !important;
         }}
 
-        /* === RECHTER RAND BÜNDIG (alles schließt rechts gleichmäßig ab) === */
+        /* Rechter Rand bündig */
         .dsOuterFrame,
         .dsBanner,
         .dsProfileBaseWrap,
@@ -201,8 +199,12 @@ def clean_html(html: str, page_title: str) -> str:
     return new_html
 
 
-def create_print_version(url: str, output_dir: str = "wahapedia_print"):
+def create_print_version(url: str, output_dir: str = "output"):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    # Dateiname aus letztem Teil der URL ableiten
+    unit_slug = urlparse(url).path.rstrip("/").split("/")[-1]
+    html_filename = f"{unit_slug}.html"
 
     script_dir = Path(__file__).parent
     for css in CSS_FILES:
@@ -214,26 +216,17 @@ def create_print_version(url: str, output_dir: str = "wahapedia_print"):
 
     print(f"📥 Lade und bereinige: {url}")
     html = fetch_datasheet(url)
-    clean = clean_html(html, url.rstrip("/").split("/")[-1].replace("-", " "))
+    clean = clean_html(html, unit_slug.replace("-", " "))
 
-    html_path = Path(output_dir) / "datasheet.html"
+    html_path = Path(output_dir) / html_filename
     html_path.write_text(clean, encoding="utf-8")
-    print(f"✅ Fertige HTML: {html_path}")
-
-    try:
-        from weasyprint import HTML
-        pdf_path = Path(output_dir) / "datasheet.pdf"
-        HTML(str(html_path)).write_pdf(str(pdf_path))
-        print(f"✅ PDF erstellt: {pdf_path}")
-    except ImportError:
-        print("ℹ️  WeasyPrint nicht installiert (optional für PDF)")
-
-    print("\n📌 Im Browser öffnen → Drucken (Hintergrundgrafiken an)")
+    print(f"✅ Fertige Datei: {html_path}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("url")
-    parser.add_argument("-o", "--output", default="wahapedia_print")
+    parser = argparse.ArgumentParser(description="Wahapedia Datasheet zu druckfertigem HTML konvertieren")
+    parser.add_argument("url", help="z.B. https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Rubric-Marines")
+    parser.add_argument("-o", "--output", default="output", help="Ausgabe-Ordner (Standard: output)")
     args = parser.parse_args()
+
     create_print_version(args.url, args.output)
