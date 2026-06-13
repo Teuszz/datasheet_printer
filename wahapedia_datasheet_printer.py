@@ -15,13 +15,13 @@ CSS_FILES = ["fonts16.css", "header16.css", "main16.css", "profile16.css"]
 
 UNWANTED_SECTIONS = ["STRATAGEMS", "LED BY", "DETACHMENT ABILITY", "ENHANCEMENTS"]
 
-# === Feste Kartengröße zum gleichmäßigen Ausschneiden ===
-# Jede erzeugte Karte erhält exakt dieses physische Format (Breite x Höhe in mm).
-# Der Inhalt wird per JavaScript so skaliert, dass er immer in diese Box passt.
+# === Fixed card size for uniform cutting ===
+# Every generated card receives exactly this physical format (width x height in mm).
+# The content is scaled via JavaScript so that it always fits into this box.
 DEFAULT_CARD_WIDTH_MM = 200.0   # 20 cm
 DEFAULT_CARD_HEIGHT_MM = 140.0  # 14 cm
-CARD_RENDER_DPI = 300.0         # Auflösung der gerenderten Box (fürs Drucken)
-CARD_DESIGN_WIDTH_PX = 1100     # "Design-Breite" des Datasheets (wie im Original)
+CARD_RENDER_DPI = 300.0         # Resolution of the rendered box (for printing)
+CARD_DESIGN_WIDTH_PX = 1100     # "Design width" of the datasheet (as in the original)
 
 
 def fetch_datasheet(url: str) -> str:
@@ -64,10 +64,10 @@ def remove_unwanted_sections(soup: BeautifulSoup) -> None:
 
 def align_keyword_boxes(main_content: BeautifulSoup) -> None:
     """
-    Erzwingt per Inline-Style + Fallback, dass die unteren KEYWORDS- und
-    FACTION KEYWORDS-Boxen exakt dieselben Spaltenproportionen haben wie
-    der Hauptinhalt oben (62 % links / Rest rechts). Dadurch sind alle Boxen
-    bündig mit dem rechten Rand und visuell konsistent.
+    Forces via inline styles + fallback that the lower KEYWORDS and
+    FACTION KEYWORDS boxes have exactly the same column proportions as
+    the main content above (62% left / remainder right). This makes all boxes
+    flush with the right edge and visually consistent.
     """
     for text_node in list(main_content.find_all(string=True)):
         text_upper = text_node.strip().upper()
@@ -87,9 +87,9 @@ def align_keyword_boxes(main_content: BeautifulSoup) -> None:
             container = getattr(container, "parent", None)
 
         if container and container.name == "div":
-            # Nur auf wahrscheinliche Keyword-Boxen anwenden (Klasse oder kurzer Inhalt),
-            # um zu vermeiden, dass Styles auf übergeordnete Frame-Container angewendet werden,
-            # die bei manchen Datasheets den extra unteren Umrandungsstrich verursachen.
+            # Only apply to likely keyword boxes (class or short content)
+            # to avoid applying styles to parent frame containers that in some
+            # datasheets cause an extra bottom border line.
             classes = " ".join(container.get("class", [])).lower()
             txt_len = len(container.get_text(" ", strip=True))
             if "keyword" in classes or "kw" in classes or "col" in classes or txt_len < 800:
@@ -122,7 +122,7 @@ def align_keyword_boxes(main_content: BeautifulSoup) -> None:
                             "gap: 0; align-items: flex-start; box-sizing: border-box !important;"
                         ).strip("; ")
 
-    # Fallback: Auch bei .ds2col und .ds2colKW direkt die Kinder anpassen
+    # Fallback: Also adjust children directly for .ds2col and .ds2colKW
     for col_class in ["ds2col", "ds2colKW"]:
         for ds2 in main_content.find_all(class_=col_class):
             if "KEYWORDS" in ds2.get_text().upper():
@@ -197,9 +197,9 @@ def clean_html(
 
     align_keyword_boxes(main)
 
-    # Zusätzliche Bereinigung: Entfernt bei manchen Datasheets ein überflüssiges
-    # leeres oder fast-leeres div am unteren Ende der dsOuterFrame, das einen
-    # zusätzlichen Strich der Umrandung unterhalb des eigentlichen Rahmens erzeugt.
+    # Additional cleanup: Removes in some datasheets an unnecessary
+    # empty or near-empty div at the bottom of dsOuterFrame that would
+    # render an extra border/line below the actual frame.
     outer = None
     if main and getattr(main, "name", None) == "div":
         classes = main.get("class", []) or []
@@ -215,7 +215,7 @@ def clean_html(
             classes_str = " ".join(child.get("class", [])) if hasattr(child, "get") else ""
             style = (child.get("style") or "").lower() if hasattr(child, "get") else ""
             cls_lower = classes_str.lower()
-            # Entferne trailing near-empty divs die typischerweise extra border/line rendern
+            # Remove trailing near-empty divs that typically render extra border/line
             if len(txt) < 5 or (not txt and any(k in cls_lower for k in ["border", "line", "frame", "corner", "bottom", "dsfooter"])):
                 if "border" in style or "height" in style or not txt:
                     child.decompose()
@@ -224,20 +224,20 @@ def clean_html(
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else page_title
 
-    # Feste Kartengröße in Pixel berechnen (mm -> px bei gewählter DPI)
+    # Calculate fixed card size in pixels (mm -> px at chosen DPI)
     px_per_mm = CARD_RENDER_DPI / 25.4
     card_w_px = int(round(card_width_mm * px_per_mm))
     card_h_px = int(round(card_height_mm * px_per_mm))
 
-    # JS skaliert den Datasheet-Inhalt so, dass er exakt in die feste Box passt.
-    # Wichtig: Die Box (schwarzer Rahmen) hat IMMER dieselbe Größe – unabhängig
-    # davon, wie viel Text enthalten ist. Dadurch ist jede Karte gleich groß.
+    # JS scales the datasheet content so it fits exactly into the fixed box.
+    # Important: The box (black border) ALWAYS has the same size – regardless
+    # of how much text is contained. This makes every card the same size.
     #
-    # Damit der Inhalt die GESAMTE Box ausfüllt (ohne Verzerrung), wird zuerst
-    # die Layout-Breite des Datasheets so gewählt, dass sein gerendertes
-    # Seitenverhältnis (Breite/Höhe) dem der Box entspricht. Anschließend wird
-    # mit einem einheitlichen Faktor (zoom) skaliert -> füllt Breite UND Höhe,
-    # Proportionen bleiben erhalten (keine Streckung).
+    # So that the content fills the ENTIRE box (without distortion), first
+    # the layout width of the datasheet is chosen so that its rendered
+    # aspect ratio (width/height) matches that of the box. Then it is
+    # scaled with a uniform factor (zoom) -> fills width AND height,
+    # proportions are preserved (no stretching).
     fit_script = """<script>
 (function () {
   function fitCard() {
@@ -245,7 +245,7 @@ def clean_html(
     var content = document.querySelector('.print-container');
     if (!card || !content) { return; }
 
-    // Messung immer ohne Skalierung
+    // Always measure without scaling
     content.style.zoom = 1;
 
     var availW = card.clientWidth;
@@ -253,17 +253,17 @@ def clean_html(
     if (availW <= 0 || availH <= 0) { return; }
     var targetRatio = availW / availH;
 
-    // Layout-Breite suchen, bei der Breite/Höhe des Inhalts == Box-Verhältnis.
-    // Mehr Breite => Text bricht breiter um => Inhalt wird flacher => Ratio steigt.
+    // Search for the layout width where width/height of content == box ratio.
+    // More width => text wraps wider => content becomes flatter => ratio increases.
     var lo = 600, hi = 4000;
     for (var i = 0; i < 32; i++) {
       var mid = (lo + hi) / 2;
       content.style.width = mid + 'px';
       var ratio = content.offsetWidth / content.offsetHeight;
       if (ratio < targetRatio) {
-        lo = mid;   // noch zu hoch -> breiter machen
+        lo = mid;   // still too tall -> make wider
       } else {
-        hi = mid;   // breit genug -> wieder schmaler versuchen
+        hi = mid;   // wide enough -> try narrower again
       }
     }
     content.style.width = hi + 'px';
@@ -288,7 +288,7 @@ def clean_html(
 </script>"""
 
     new_html = f"""<!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -314,8 +314,8 @@ def clean_html(
             margin: 0;
         }}
 
-        /* Feste Kartengröße ({card_width_mm:g} x {card_height_mm:g} mm).
-           Der schwarze Rahmen ist die Schnittlinie zum Ausschneiden. */
+        /* Fixed card size ({card_width_mm:g} x {card_height_mm:g} mm).
+           The black border is the cut line for trimming. */
         .print-card {{
             width: {card_w_px}px;
             height: {card_h_px}px;
@@ -337,7 +337,7 @@ def clean_html(
             padding: 20px;
         }}
 
-        /* Icons oben rechts entfernen */
+        /* Remove icons top right */
         .dsOuterFrame img,
         .dsBanner img,
         .dsHeader img,
@@ -353,7 +353,7 @@ def clean_html(
             display: none !important;
         }}
 
-        /* Flex-Layout für originale Proportionen - Hauptspalten (kyrillische Klassennamen aus Original-CSS) */
+        /* Flex layout for original proportions - main columns (Cyrillic class names from original CSS) */
         .ds2col {{
             display: flex !important;
             width: 100% !important;
@@ -374,7 +374,7 @@ def clean_html(
             box-sizing: border-box !important;
         }}
 
-        /* Flex-Layout für Keywords-Sektion - exakt gleiche Proportionen + bündig rechts */
+        /* Flex layout for Keywords section - exactly same proportions + flush right */
         .ds2colKW {{
             display: flex !important;
             width: 100% !important;
@@ -430,7 +430,7 @@ def create_print_version(
         if src.exists():
             shutil.copy(src, output_dir)
 
-    print(f"📥 Lade und bereinige: {url}")
+    print(f"📥 Loading and cleaning: {url}")
     html = fetch_datasheet(url)
     clean = clean_html(
         html,
@@ -441,7 +441,7 @@ def create_print_version(
 
     html_path = Path(output_dir) / html_filename
     html_path.write_text(clean, encoding="utf-8")
-    print(f"✅ Fertige Datei: {html_path}")
+    print(f"✅ Finished file: {html_path}")
 
 
 def process_url_list(
@@ -450,7 +450,7 @@ def process_url_list(
     card_width_mm: float = DEFAULT_CARD_WIDTH_MM,
     card_height_mm: float = DEFAULT_CARD_HEIGHT_MM,
 ):
-    """Verarbeitet eine .txt-Datei mit einer URL pro Zeile."""
+    """Process a .txt file with one URL per line."""
     try:
         with open(file_path, encoding="utf-8") as f:
             urls = []
@@ -459,20 +459,20 @@ def process_url_list(
                 if line and not line.startswith("#"):
                     urls.append(line)
     except FileNotFoundError:
-        print(f"❌ Fehler: Datei '{file_path}' nicht gefunden.")
+        print(f"❌ Error: File '{file_path}' not found.")
         return
     except Exception as e:
-        print(f"❌ Fehler beim Lesen der Datei: {e}")
+        print(f"❌ Error reading the file: {e}")
         return
 
     if not urls:
-        print("⚠️  Keine gültigen URLs in der Datei gefunden.")
+        print("⚠️  No valid URLs found in the file.")
         return
 
     total = len(urls)
-    print(f"📋 {total} Datasheet-URLs gefunden. Starte Verarbeitung...\n")
+    print(f"📋 Found {total} datasheet URLs. Starting processing...\n")
 
-    # CSS-Dateien nur einmal am Anfang kopieren (spart Zeit bei vielen Einträgen)
+    # Copy CSS files only once at the beginning (saves time with many entries)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     script_dir = Path(__file__).parent
     for css in CSS_FILES:
@@ -492,45 +492,45 @@ def process_url_list(
                 card_height_mm=card_height_mm,
             )
         except KeyboardInterrupt:
-            print("\n⏹️  Abgebrochen durch Benutzer.")
+            print("\n⏹️  Aborted by user.")
             break
         except Exception as e:
-            print(f"     ❌ Fehler: {e}\n")
+            print(f"     ❌ Error: {e}\n")
         else:
-            print()  # Leerzeile für bessere Lesbarkeit
+            print()  # blank line for better readability
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Wahapedia Datasheet zu druckfertigem HTML konvertieren (einzeln oder als Liste)"
+        description="Convert Wahapedia Datasheet to print-ready HTML (single or list)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "url",
         nargs="?",
-        help="Einzelne URL, z.B. https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Rubric-Marines"
+        help="Single URL, e.g. https://wahapedia.ru/wh40k10ed/factions/thousand-sons/Rubric-Marines"
     )
     group.add_argument(
         "-f", "--file",
-        metavar="DATEI.txt",
-        help="Textdatei mit einer URL pro Zeile (Kommentare mit # möglich)"
+        metavar="FILE.txt",
+        help="Text file with one URL per line (comments starting with # are ignored)"
     )
     parser.add_argument(
         "-o", "--output",
         default="output",
-        help="Ausgabe-Ordner (Standard: output)"
+        help="Output folder (default: output)"
     )
     parser.add_argument(
         "--card-width-mm",
         type=float,
         default=DEFAULT_CARD_WIDTH_MM,
-        help=f"Feste Kartenbreite in mm (Standard: {DEFAULT_CARD_WIDTH_MM:g})"
+        help=f"Fixed card width in mm (default: {DEFAULT_CARD_WIDTH_MM:g})"
     )
     parser.add_argument(
         "--card-height-mm",
         type=float,
         default=DEFAULT_CARD_HEIGHT_MM,
-        help=f"Feste Kartenhöhe in mm (Standard: {DEFAULT_CARD_HEIGHT_MM:g})"
+        help=f"Fixed card height in mm (default: {DEFAULT_CARD_HEIGHT_MM:g})"
     )
     args = parser.parse_args()
 
