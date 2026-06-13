@@ -15,6 +15,14 @@ CSS_FILES = ["fonts16.css", "header16.css", "main16.css", "profile16.css"]
 
 UNWANTED_SECTIONS = ["STRATAGEMS", "LED BY", "DETACHMENT ABILITY", "ENHANCEMENTS"]
 
+# === Feste Kartengröße zum gleichmäßigen Ausschneiden ===
+# Jede erzeugte Karte erhält exakt dieses physische Format (Breite x Höhe in mm).
+# Der Inhalt wird per JavaScript so skaliert, dass er immer in diese Box passt.
+DEFAULT_CARD_WIDTH_MM = 200.0   # 20 cm
+DEFAULT_CARD_HEIGHT_MM = 140.0  # 14 cm
+CARD_RENDER_DPI = 300.0         # Auflösung der gerenderten Box (fürs Drucken)
+CARD_DESIGN_WIDTH_PX = 1100     # "Design-Breite" des Datasheets (wie im Original)
+
 
 def fetch_datasheet(url: str) -> str:
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
@@ -153,7 +161,12 @@ def remove_small_icons(main_content) -> None:
             el.decompose()
 
 
-def clean_html(html: str, page_title: str) -> str:
+def clean_html(
+    html: str,
+    page_title: str,
+    card_width_mm: float = DEFAULT_CARD_WIDTH_MM,
+    card_height_mm: float = DEFAULT_CARD_HEIGHT_MM,
+) -> str:
     soup = BeautifulSoup(html, "lxml")
 
     for sel in [
@@ -211,6 +224,69 @@ def clean_html(html: str, page_title: str) -> str:
     title_tag = soup.find("title")
     title = title_tag.get_text(strip=True) if title_tag else page_title
 
+    # Feste Kartengröße in Pixel berechnen (mm -> px bei gewählter DPI)
+    px_per_mm = CARD_RENDER_DPI / 25.4
+    card_w_px = int(round(card_width_mm * px_per_mm))
+    card_h_px = int(round(card_height_mm * px_per_mm))
+
+    # JS skaliert den Datasheet-Inhalt so, dass er exakt in die feste Box passt.
+    # Wichtig: Die Box (schwarzer Rahmen) hat IMMER dieselbe Größe – unabhängig
+    # davon, wie viel Text enthalten ist. Dadurch ist jede Karte gleich groß.
+    #
+    # Damit der Inhalt die GESAMTE Box ausfüllt (ohne Verzerrung), wird zuerst
+    # die Layout-Breite des Datasheets so gewählt, dass sein gerendertes
+    # Seitenverhältnis (Breite/Höhe) dem der Box entspricht. Anschließend wird
+    # mit einem einheitlichen Faktor (zoom) skaliert -> füllt Breite UND Höhe,
+    # Proportionen bleiben erhalten (keine Streckung).
+    fit_script = """<script>
+(function () {
+  function fitCard() {
+    var card = document.querySelector('.print-card');
+    var content = document.querySelector('.print-container');
+    if (!card || !content) { return; }
+
+    // Messung immer ohne Skalierung
+    content.style.zoom = 1;
+
+    var availW = card.clientWidth;
+    var availH = card.clientHeight;
+    if (availW <= 0 || availH <= 0) { return; }
+    var targetRatio = availW / availH;
+
+    // Layout-Breite suchen, bei der Breite/Höhe des Inhalts == Box-Verhältnis.
+    // Mehr Breite => Text bricht breiter um => Inhalt wird flacher => Ratio steigt.
+    var lo = 600, hi = 4000;
+    for (var i = 0; i < 32; i++) {
+      var mid = (lo + hi) / 2;
+      content.style.width = mid + 'px';
+      var ratio = content.offsetWidth / content.offsetHeight;
+      if (ratio < targetRatio) {
+        lo = mid;   // noch zu hoch -> breiter machen
+      } else {
+        hi = mid;   // breit genug -> wieder schmaler versuchen
+      }
+    }
+    content.style.width = hi + 'px';
+
+    var natW = content.offsetWidth;
+    var natH = content.offsetHeight;
+    if (natW <= 0 || natH <= 0) { return; }
+
+    var scale = Math.min(availW / natW, availH / natH);
+    content.style.zoom = scale;
+  }
+  if (document.readyState === 'complete') {
+    fitCard();
+  } else {
+    window.addEventListener('load', fitCard);
+  }
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(fitCard);
+  }
+  setTimeout(fitCard, 300);
+})();
+</script>"""
+
     new_html = f"""<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -231,19 +307,34 @@ def clean_html(html: str, page_title: str) -> str:
             button, .NavWrapper, .reAds {{ display: none !important; }}
         }}
 
-        body {{
-            background: #f4f4f4;
+        html, body {{
+            background: #ffffff;
             font-family: 'ConduitITC', 'Minion Pro', Arial, sans-serif;
-            padding: 20px;
+            padding: 0;
             margin: 0;
         }}
 
-        .print-container {{
-            max-width: 1100px;
+        /* Feste Kartengröße ({card_width_mm:g} x {card_height_mm:g} mm).
+           Der schwarze Rahmen ist die Schnittlinie zum Ausschneiden. */
+        .print-card {{
+            width: {card_w_px}px;
+            height: {card_h_px}px;
+            box-sizing: border-box;
+            border: 2px solid #000;
+            background: #ffffff;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             margin: 0 auto;
+        }}
+
+        .print-container {{
+            width: {CARD_DESIGN_WIDTH_PX}px;
+            margin: 0;
             background: white;
-            box-shadow: 0 0 25px rgba(0,0,0,0.15);
-            padding: 25px;
+            box-sizing: border-box;
+            padding: 20px;
         }}
 
         /* Icons oben rechts entfernen */
@@ -309,15 +400,23 @@ def clean_html(html: str, page_title: str) -> str:
     </style>
 </head>
 <body>
-    <div class="print-container">
-        {str(main)}
+    <div class="print-card">
+        <div class="print-container">
+            {str(main)}
+        </div>
     </div>
+    {fit_script}
 </body>
 </html>"""
     return new_html
 
 
-def create_print_version(url: str, output_dir: str = "output"):
+def create_print_version(
+    url: str,
+    output_dir: str = "output",
+    card_width_mm: float = DEFAULT_CARD_WIDTH_MM,
+    card_height_mm: float = DEFAULT_CARD_HEIGHT_MM,
+):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     unit_slug = urlparse(url).path.rstrip("/").split("/")[-1]
@@ -333,14 +432,24 @@ def create_print_version(url: str, output_dir: str = "output"):
 
     print(f"📥 Lade und bereinige: {url}")
     html = fetch_datasheet(url)
-    clean = clean_html(html, unit_slug.replace("-", " "))
+    clean = clean_html(
+        html,
+        unit_slug.replace("-", " "),
+        card_width_mm=card_width_mm,
+        card_height_mm=card_height_mm,
+    )
 
     html_path = Path(output_dir) / html_filename
     html_path.write_text(clean, encoding="utf-8")
     print(f"✅ Fertige Datei: {html_path}")
 
 
-def process_url_list(file_path: str, output_dir: str = "output"):
+def process_url_list(
+    file_path: str,
+    output_dir: str = "output",
+    card_width_mm: float = DEFAULT_CARD_WIDTH_MM,
+    card_height_mm: float = DEFAULT_CARD_HEIGHT_MM,
+):
     """Verarbeitet eine .txt-Datei mit einer URL pro Zeile."""
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -376,7 +485,12 @@ def process_url_list(file_path: str, output_dir: str = "output"):
     for i, url in enumerate(urls, 1):
         print(f"[{i:3d}/{total}] 📥 {url}")
         try:
-            create_print_version(url, output_dir)
+            create_print_version(
+                url,
+                output_dir,
+                card_width_mm=card_width_mm,
+                card_height_mm=card_height_mm,
+            )
         except KeyboardInterrupt:
             print("\n⏹️  Abgebrochen durch Benutzer.")
             break
@@ -406,11 +520,33 @@ if __name__ == "__main__":
         default="output",
         help="Ausgabe-Ordner (Standard: output)"
     )
+    parser.add_argument(
+        "--card-width-mm",
+        type=float,
+        default=DEFAULT_CARD_WIDTH_MM,
+        help=f"Feste Kartenbreite in mm (Standard: {DEFAULT_CARD_WIDTH_MM:g})"
+    )
+    parser.add_argument(
+        "--card-height-mm",
+        type=float,
+        default=DEFAULT_CARD_HEIGHT_MM,
+        help=f"Feste Kartenhöhe in mm (Standard: {DEFAULT_CARD_HEIGHT_MM:g})"
+    )
     args = parser.parse_args()
 
     if args.file:
-        process_url_list(args.file, args.output)
+        process_url_list(
+            args.file,
+            args.output,
+            card_width_mm=args.card_width_mm,
+            card_height_mm=args.card_height_mm,
+        )
     elif args.url:
-        create_print_version(args.url, args.output)
+        create_print_version(
+            args.url,
+            args.output,
+            card_width_mm=args.card_width_mm,
+            card_height_mm=args.card_height_mm,
+        )
     else:
         parser.print_help()
