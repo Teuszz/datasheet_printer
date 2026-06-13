@@ -11,15 +11,28 @@ The two tools work together as a complete workflow:
 
 ## Quickstart Workflow
 
-1. Create a `my_army_urls.txt` file with each line containing an URL to a wahapedia datasheet
+1. Create virtual environment and install necessary Python packages:
+    ```bash
+    # 1. Create virtual environment
+    python3 -m venv venv
+
+    # 2. Activate virtual environment
+    source venv/bin/activate          # Linux / macOS
+    # venv\Scripts\activate           # Windows
+
+    # 3. Install required Python packages
+    pip install -r requirements.txt
+    ```
+
+2. Create a `my_army_urls.txt` file with each line containing an URL to a wahapedia datasheet
    you would like to print
 
-2. Generate HTML cards for your whole army:
+3. Generate HTML cards for your whole army:
    ```bash
    python wahapedia_datasheet_printer.py -f my_army_urls.txt -o html_cards/ --card-width-mm 200 --card-height-mm 140
    ```
 
-3. Create a beautiful PDF with maximum uniform card size:
+4. Create a beautiful PDF with maximum uniform card size:
    ```bash
    python datasheet_pdf_generator.py --input-dir html_cards/ \
        --target-width-mm 200
@@ -27,7 +40,7 @@ The two tools work together as a complete workflow:
        --margin-mm 4 --gap-mm 4
    ```
 
-4. Print the PDF on photo paper or cardstock at 100% scale and cut along the edges.
+5. Print the PDF on photo paper or cardstock at 100% scale and cut along the edges.
 
 Enjoy your perfectly uniform, professional-looking datasheet cards! ⚔️
 
